@@ -1012,6 +1012,90 @@ class EqualMatcher(BaseMatcher):
         return code.strip("\n")
 
 
+class SDPAttnMatcher(BaseMatcher):
+    def generate_code(self, kwargs):
+        scale_val = None
+        code = None
+        Assert_TEMPLATE = textwrap.dedent(
+            """
+            paddle.utils.try_import("math")
+            assert {} is None or {} is math.sqrt({}.shape[-1]),"Fault: Not support parameter scale"
+            """
+        )
+        if "scale" in kwargs:
+            scale_val = kwargs.pop("scale")
+        API_TEMPLATE = textwrap.dedent(
+            """
+            {}({})
+            """
+        )
+        if scale_val:
+            code = Assert_TEMPLATE.format(
+                scale_val, scale_val, kwargs["query"]
+            ) + API_TEMPLATE.format(self.get_paddle_api(), self.kwargs_to_str(kwargs))
+        else:
+            code = API_TEMPLATE.format(
+                self.get_paddle_api(), self.kwargs_to_str(kwargs)
+            )
+        return code
+
+
+class FAFlashAttnFuncMatcher(BaseMatcher):
+    def generate_code(self, kwargs):
+        scale_val = None
+        code = None
+        Assert_TEMPLATE = textwrap.dedent(
+            """
+            paddle.utils.try_import("math")
+            assert {} is None or {} is math.sqrt({}.shape[-1]),"Fault: Not support parameter scale"
+            """
+        )
+        if "softmax_scale" in kwargs:
+            scale_val = kwargs.pop("softmax_scale")
+        API_TEMPLATE = textwrap.dedent(
+            """
+            {}({})
+            """
+        )
+        if scale_val:
+            code = Assert_TEMPLATE.format(
+                scale_val, scale_val, kwargs["query"]
+            ) + API_TEMPLATE.format(self.get_paddle_api(), self.kwargs_to_str(kwargs))
+        else:
+            code = API_TEMPLATE.format(
+                self.get_paddle_api(), self.kwargs_to_str(kwargs)
+            )
+        return code
+
+
+class NlpGetLoggerMatcher(BaseMatcher):
+    def generate_code(self, kwargs):
+        API_TEMPLATE = textwrap.dedent(
+            """
+            paddle.utils.try_import("logging")
+            logging.getLogger({})
+            """
+        )
+        return API_TEMPLATE.format(self.kwargs_to_str(kwargs))
+
+
+class NlpGenerationConfigMatcher(BaseMatcher):
+    def generate_code(self, kwargs):
+        greedy_search_flag = False
+        num_beans_value = 1
+        if "do_sample" in kwargs:
+            do_sample_value = kwargs["do_sample"]
+            if do_sample_value != '"""False"""':
+                greedy_search_flag = True
+        if greedy_search_flag and "num_beans" in kwargs:
+            num_beans_value = kwargs["num_beans"]
+        if greedy_search_flag:
+            greedy_search = f'"greedy_search" if {do_sample_value} else "sampling" if {num_beans_value} == 1 else "beam_search"'
+            kwargs["greedy_search"] = greedy_search
+        code = f"{self.get_paddle_api()}({self.kwargs_to_str(kwargs)})"
+        return code
+
+
 class TensorMatcher(BaseMatcher):
     def get_paddle_nodes(self, args, kwargs):
         kwargs = self.parse_kwargs(kwargs)
@@ -3539,9 +3623,14 @@ class TensorRound_Matcher(BaseMatcher):
 
 class NonzeroMatcher(BaseMatcher):
     def generate_code(self, kwargs):
-        if "as_tuple" in kwargs and kwargs["as_tuple"] != "(False)":
-            return None
-        return GenericMatcher.generate_code(self, kwargs)
+        out_flag = False
+        if "out" in kwargs:
+            out_val = kwargs.pop("out")
+            out_flag = True
+        code = GenericMatcher.generate_code(self, kwargs)
+        if out_flag:
+            code = f"paddle.assign({code},{out_val})"
+        return code
 
 
 class NormMatcher(BaseMatcher):
@@ -4279,3 +4368,77 @@ class OsEnvironGetMatcher(BaseMatcher):
         else:
             code = "misidentify"
         return code
+
+
+class FAApplyRotaryEmbFuncMatcher(BaseMatcher):
+    def generate_aux_code(self):
+        CODE_TEMPLATE = textwrap.dedent(
+            """
+            def apply_rotary_emb_func(x, cos, sin):
+
+                def _rotate_half(x):
+                    from einops import rearrange
+
+                    x = rearrange(x, "... (j d) -> ... j d", j=2)
+                    x1, x2 = x.unbind(dim=-2)
+                    return paddle.concat((-x2, x1), dim=-1)
+
+                # [seq_len,rotary_dim/2] ==>[seq_len, rotary_dim]
+                cos = paddle.concat([cos,cos],axis=-1)
+                # [seq_len, rotary_dim] ==>[1,seq_len, 1,rotary_dim]
+                cos.unsqueeze(axis=1).unsqueeze(axis=0)
+
+                # [seq_len,rotary_dim/2] ==>[seq_len, rotary_dim]
+                sin = paddle.concat([sin,sin],axis=-1)
+                # [seq_len, rotary_dim] ==>[1,seq_len, 1,rotary_dim]
+                sin.unsqueeze(axis=1).unsqueeze(axis=0)
+
+                t_rot, t_pass = x[..., :cos.shape[-1]], x[..., cos.shape[-1]:]
+                t_rot = (t_rot * cos) + (_rotate_half(t_rot) * sin)
+
+                return t_rot
+            """
+        )
+        return CODE_TEMPLATE
+
+    def generate_code(self, kwargs):
+        self.write_aux_code()
+        print("hello")
+        API_TEMPLATE = textwrap.dedent(
+            """
+            paddle_aux.apply_rotary_emb_func({})
+            """
+        )
+        return API_TEMPLATE.format(self.kwargs_to_str(kwargs))
+
+    def get_paddle_api(self):
+        self.write_aux_code()
+        return "paddle_aux.apply_rotary_emb_func"
+
+
+class FARmsNorm(BaseMatcher):
+    def generate_aux_code(self):
+        CODE_TEMPLATE = textwrap.dedent(
+            """
+            def rms_norm(x, weight, epsilon):
+                x_dtype = x.dtype
+                x = x.astype(paddle.float32)
+                output = x * paddle.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+                output = output.astype(x_dtype)
+                return output * weight
+            """
+        )
+        return CODE_TEMPLATE
+
+    def generate_code(self, kwargs):
+        self.write_aux_code()
+        API_TEMPLATE = textwrap.dedent(
+            """
+            paddle_aux.rms_norm({})
+            """
+        )
+        return API_TEMPLATE.format(self.kwargs_to_str(kwargs))
+
+    def get_paddle_api(self):
+        self.write_aux_code()
+        return "paddle_aux.rms_norm"
