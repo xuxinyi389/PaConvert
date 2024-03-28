@@ -15149,15 +15149,6 @@
       "dim": "axis"
     }
   },
-  "torch.utils.checkpoint.checkpoint": {
-    "Matcher": "GenericMatcher",
-    "paddle_api": "paddle.distributed.fleet.utils.recompute",
-    "args_list": [
-      "function",
-      "*args",
-      "**kwargs"
-    ]
-  },
   "torch.utils.cpp_extension.BuildExtension": {
     "Matcher": "GenericMatcher",
     "paddle_api": "paddle.utils.cpp_extension.BuildExtension",
