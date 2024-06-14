@@ -913,7 +913,7 @@
   },
   "torch.Tensor.conj_physical_": {},
   "torch.Tensor.contiguous": {
-    "Matcher": "TensorSkipMatcher",
+    "Matcher": "UnchangeMatcher",
     "min_input_args": 0
   },
   "torch.Tensor.copy_": {
