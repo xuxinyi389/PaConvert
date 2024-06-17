@@ -15877,7 +15877,7 @@
   },
   "transformers.generation.LogitsProcessor": {
     "Matcher": "GenericMatcher",
-    "paddle_api": "paddlenlp.transformers.generation.LogitsProcessor",
+    "paddle_api": "paddlenlp.generation.LogitsProcessor",
     "args_list": [
       "input_ids",
       "scores"

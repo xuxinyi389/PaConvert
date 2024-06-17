@@ -436,8 +436,8 @@ class TRFMPreTrainedModelMatcher(BaseMatcher):
             setattr(paddlenlp.transformers.model_utils.PretrainedModel, 'get_head_mask', get_head_mask)
 
             original_generate = paddlenlp.generation.utils.GenerationMixin.generate
-            def generate(self, *args, **kwargs):
-                return original_generate(self, *args, **kwargs)[0]
+            def generate(self, input_ids, *args, **kwargs):
+                return paddle.concat((input_ids,original_generate(self,input_ids, *args, **kwargs)[0]),axis=-1)
             setattr(paddlenlp.generation.utils.GenerationMixin, 'generate', generate)
 
             setattr(paddlenlp.transformers.model_utils.PretrainedModel, 'device', None)
